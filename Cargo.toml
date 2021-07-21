@@ -1,0 +1,38 @@
+[package]
+name = "guff-sharefiles"
+version = "0.1.8"
+edition = "2018"
+description = "Package IDA-encoded data in a portable file format"
+homepage = "https://github.com/declanmalone/guff-sharefiles"
+categories = ["mathematics"]
+keywords = ["IDA", "Galois", "matrix", "maths", "SIMD"]
+license = "GPL-2.0-or-later OR LGPL-2.0-or-later"
+authors = ["Declan Malone <idablack@users.sourceforge.net>"]
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# Use criterion for benchmarking all sorts of things
+[dev-dependencies]
+criterion = "0.3"
+
+#[[bench]]
+#name = "vector_mul"
+#harness = false
+
+[profile.release]
+debug = true
+
+[dependencies]
+#"num" = "0.4.0"
+#"num-traits" = "0.2.14"
+"guff" = "0.1.7"
+"guff-matrix" = "0.1.8"
+
+# I want documentation generated for features
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf", "aarch64-unknown-linux-gnu"]
+rustdoc-args = ["--cfg", "doc_cfg"]
+
+
