@@ -1,7 +1,7 @@
 
 use clap::{Arg, App, SubCommand};
 use std::io;
-//use std::io::{ErrorKind};
+use std::io::{ErrorKind};
 use std::io::prelude::*;
 use std::fs::File;
 
@@ -62,6 +62,8 @@ fn main() -> io::Result<()> {
 	16
     };
 
+    let use_ref = matches.is_present("r");
+
     let mut input = File::open(infile)?;
     let mut buffer = vec![0; (16384*1024) + 8];
 
@@ -83,7 +85,8 @@ fn main() -> io::Result<()> {
 
 
     blockwise_split(infile, k, n, 8192, true);
-    return Ok(());
+
+    // return Ok(());
     
     // guff-matrix needs either/both/all:
     // * architecture-neutral matrix type (NoSimd option)
@@ -108,7 +111,6 @@ fn main() -> io::Result<()> {
 
     // Choice of multiply routines
 
-    let use_ref = matches.is_present("r");
 
     if use_ref {
 	reference_matrix_multiply(&mut xform, &mut input,
@@ -122,12 +124,10 @@ fn main() -> io::Result<()> {
     // Output the 16 files
     let data = output.as_slice().chunks(2048 * 1024 + 1);
     for (ext, chunk) in data.enumerate() {
-	let outfile = format!("{}.{}", infile, ext);
+	let outfile = format!("{}-full.{}", infile, ext + 1);
 	let mut f = File::create(outfile)?;
 	f.write(chunk)?;
     }
-
-    
 
     Ok(())
 
@@ -165,7 +165,7 @@ fn main() -> io::Result<()> {
 // storing values.
 
 fn blockwise_split(infile : &str, k : usize, n : usize,
-		   mut cols : usize, use_simd : bool)
+		   mut cols : usize, use_ref : bool)
 		   -> io::Result<()> {
 
     eprintln!("n+k = {}", n+k);
@@ -244,9 +244,18 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 		    panic!("Some kind of I/O error: {}", x);
 		}
 	    }
-	    
 	}
-	drop(slice);
+	// drop(slice); // not used again anyway
+
+	// do the multiply on the block
+	if use_ref {
+	    reference_matrix_multiply(&mut xform, &mut input,
+				      &mut output, &field);
+	} else {
+	    unsafe {
+		simd_warm_multiply(&mut xform, &mut input, &mut output);
+	    }
+	}
 
 	if have_bytes == 0 && at_eof {
 	    eprintln!("File EOF found at even bufsize boundary");
@@ -267,11 +276,11 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 	// write out to the n share files
 	let data = output.as_slice().chunks(cols);
 	for (ext, chunk) in data.enumerate() {
-	    // enumerates from 1?
-	    eprintln!("ext: {}", ext);
+	    // eprintln!("ext: {}", ext);
             handles[ext].write(&chunk[..output_cols])?;
 	}
 
+	if at_eof { return Ok(()) }
     }
 
 }
