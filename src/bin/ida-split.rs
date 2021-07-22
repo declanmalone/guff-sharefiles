@@ -1,6 +1,7 @@
 
 use clap::{Arg, App, SubCommand};
 use std::io;
+//use std::io::{ErrorKind};
 use std::io::prelude::*;
 use std::fs::File;
 
@@ -13,7 +14,7 @@ use guff_ida::*;
 const INFILE : &str = "16m";
 
 // will split it using an 8,16 scheme
-// producing share filess 2m.1, 2m.2, ... , 2m.16
+// producing share filess 2m.0, 2m.1, 2m.2, ... , 2m.15
 //
 // 
 
@@ -35,7 +36,9 @@ fn main() -> io::Result<()> {
     //.arg(Arg::with_name("file").value_name("INFILE").required(false))
 	.args_from_usage(
             "-r                   'Use reference matrix mul'
-            -s                    'Use SIMD matrix mul (default)'")
+             -k=[int]               'quorum value'
+             -n=[int]               'number of shares'
+             -s                    'Use SIMD matrix mul (default)'")
 	.arg(Arg::with_name("INFILE")
 	     .help("Sets the input file to use")
 	     .required(false)
@@ -46,15 +49,27 @@ fn main() -> io::Result<()> {
 	Some(f) => { println!("Using input file: {}", f); f },
 	_ => { println!("Using default file\n"); INFILE }
     };
-    
+
+    let k : usize = if let Some(num) = matches.value_of("k") {
+	num.parse().unwrap()
+    } else {
+	8
+    };
+
+    let n : usize = if let Some(num) = matches.value_of("n") {
+	num.parse().unwrap()
+    } else {
+	16
+    };
+
     let mut input = File::open(infile)?;
     let mut buffer = vec![0; (16384*1024) + 8];
 
     // 16384 / 8 = 2048, so input and output matrices will have 2049
     // columns, satisfying gcd property.
     
-    let n = input.read(&mut buffer.as_mut_slice())?;
-    if n < (16384*1024) + 8 {
+    let got = input.read(&mut buffer.as_mut_slice())?;
+    if got < (16384*1024) + 8 {
 	eprintln!("Didn't read all of file");
 	return Ok(())
     }
@@ -66,6 +81,10 @@ fn main() -> io::Result<()> {
     let field = new_gf8(0x11b, 0x1b);
     let cauchy_data = cauchy_matrix(&field, &key, 16, 8);
 
+
+    blockwise_split(infile, k, n, 8192, true);
+    return Ok(());
+    
     // guff-matrix needs either/both/all:
     // * architecture-neutral matrix type (NoSimd option)
     // * automatic selection of arch-specific type (with fallback)
@@ -109,8 +128,151 @@ fn main() -> io::Result<()> {
     }
 
     
+
     Ok(())
 
 
 	
 }
+
+// Do the transform on a block-by-block basis
+//
+// Profiling the code shows that 36% of the time is spent in writing
+// to the output matrix. That accounts for the biggest chunk of
+// runtime. I don't know if the overhead here is being caused by
+// Rust's bounds checks on the accesses, or whether it's something
+// potentially worse: that the pattern of (fairly) random writes
+// itself is the cause.
+//
+// I wrote my matrix multiply algorithm assuming that cache issues
+// shouldn't be a problem for scattered writes, but perhaps it is.
+//
+// Anyway, I have to implement block-by-block processing of the file
+// anyway. When it's done, it might shine a light on where the real
+// bottleneck is. If it's cache write misses, then using smaller
+// buffers should improve locality of reference at the expense of
+// extra function calls and setup costs.
+//
+// Buffer size
+//
+// The multiply algorithm has restrictions on how many columns can be
+// in the input/output matrices. So depending on k (eg, 4, 8), we
+// might not be able to use some common power of 2 buffer
+// sizes. However, when reading from files, it's best to read in a
+// multiple of the file system's block size.
+//
+// What I will do is allocate an extra column, but not use it for
+// storing values.
+
+fn blockwise_split(infile : &str, k : usize, n : usize,
+		   mut cols : usize, use_simd : bool)
+		   -> io::Result<()> {
+
+    eprintln!("n+k = {}", n+k);
+    let key_range = 1..;
+    let key = key_range.take(n+k).collect();
+
+    let field = new_gf8(0x11b, 0x1b);
+    let cauchy_data = cauchy_matrix(&field, &key, n, k);
+
+    // use larger matrix if we need to satisfy gcd condition but
+    // remember that we shouldn't fill or use that column in the
+    // input/output.
+    let want_cols = cols;	// cols we want to I/O
+    let mut gcd_padding = 0;
+    if cols % k == 0 {
+	cols += 1;		// actual matrix columns
+	gcd_padding = k;
+    }
+
+    let mut read_handle = File::open(infile)?;
+    // do we need a reader if we're loading big chunks of the file all
+    // the time? Let's say "no" for now.
+    // let mut reader = BufReader::new(read_handle);
+
+    // We can get a mutable slice of the input matrix to avoid
+    // allocating a new vector and copying it. We may have to drop it,
+    // though, in order for the matrix multiply routine to borrow the
+    // struct mutably, though.
+    
+    let mut xform = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+	::new(n,k,true);
+    xform.fill(&cauchy_data);
+
+    // must choose cols appropriately (gcd requirement)
+    let mut input = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+	::new(k,cols ,false);
+    // input.fill(&buffer); // filled in loop
+
+    let mut output = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+	::new(n,cols,true);
+
+    // open the n output files and stash the handles
+    let mut handles = Vec::with_capacity(n);
+    for ext in 1..=n {
+	let outfile = format!("{}-block.{}", infile, ext);
+	let mut f = File::create(outfile)?;
+	handles.push(f);
+    }
+
+    let mut at_eof = false;
+    loop {
+
+	let want_bytes = want_cols * k;
+	let mut have_bytes = 0;
+
+	// array has padding, but matrix doesn't expose it
+	let mut slice = input.as_mut_slice();
+
+	// we may have to shrink slice if we added gcd padding
+	if gcd_padding > 0 {
+	    slice = &mut slice[..want_bytes]
+	}
+	
+	while have_bytes < want_bytes {
+	    let result = read_handle.read(&mut slice);
+	    match result {
+		Err(Interrupted) => { }, // apparently we just retry
+		Ok(0) => { at_eof = true; break },
+		Ok(n) => {
+		    have_bytes += n;
+		    slice = &mut slice[n..];
+		    // loop again to see if we receive more
+			
+		},
+		Err(x) => {
+		    panic!("Some kind of I/O error: {}", x);
+		}
+	    }
+	    
+	}
+	drop(slice);
+
+	if have_bytes == 0 && at_eof {
+	    eprintln!("File EOF found at even bufsize boundary");
+	    return Ok(())
+	}
+
+	let mut output_cols = want_cols;
+	if have_bytes > 0 && at_eof {
+	    eprintln!("File EOF with {} bytes in final partial block",
+		      have_bytes);
+	    // round up to the next full column
+	    if have_bytes % k != 0 {
+		have_bytes += k - 1;
+	    }
+	    output_cols = have_bytes / k;
+	}
+
+	// write out to the n share files
+	let data = output.as_slice().chunks(cols);
+	for (ext, chunk) in data.enumerate() {
+	    // enumerates from 1?
+	    eprintln!("ext: {}", ext);
+            handles[ext].write(&chunk[..output_cols])?;
+	}
+
+    }
+
+}
+
