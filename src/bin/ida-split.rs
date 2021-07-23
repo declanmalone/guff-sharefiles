@@ -1,16 +1,20 @@
 
+use guff_sharefiles::*;
+
 use clap::{Arg, App, SubCommand};
 use std::io;
-use std::io::{ErrorKind};
 use std::io::prelude::*;
-use std::fs::File;
+use std::io::{ErrorKind};
+use std::fs::{File};
+use std::fs::metadata;
+use std::convert::TryInto;
 
 use guff::*;
 use guff_matrix::*;
 use guff_matrix::x86::*;
 use guff_ida::*;
 
-// file that 16384 + 8 bytes
+// file that 16384k + 8 bytes
 const INFILE : &str = "16m";
 
 // will split it using an 8,16 scheme
@@ -214,11 +218,13 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
     // the time? Let's say "no" for now.
     // let mut reader = BufReader::new(read_handle);
 
+    // also need to find file size...
+    let file_size = metadata(infile)?.len();
+
     // We can get a mutable slice of the input matrix to avoid
     // allocating a new vector and copying it. We may have to drop it,
     // though, in order for the matrix multiply routine to borrow the
     // struct mutably, though.
-    
     let mut xform = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
 	::new(n,k,true);
     xform.fill(&cauchy_data);
@@ -231,13 +237,36 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
     let mut output = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
 	::new(n,cols,true);
 
+    // in preparation for writing share headers, break cauchy_data up
+    // into per-share chunks.
+    let cauchy_clone = cauchy_data.clone();
+    let mut transform_chunks = cauchy_clone.chunks(k);
+
     // open the n output files and stash the handles
     let mut handles = Vec::with_capacity(n);
     for ext in 1..=n {
 	let outfile = format!("{}-block.{}", infile, ext);
 	let mut f = File::create(outfile)?;
+
+	// slightly wasteful setting up new structs each time...
+	let w = 1;
+	let chunk_start = 0;
+	let chunk_next = file_size.try_into().unwrap();
+	let large_k = false;
+	let large_w = false;
+	let is_final = true;
+	let xform = true;
+	let xform_data = transform_chunks.next().unwrap().to_vec();
+	let header = HeaderV1 {
+	    k, w, chunk_start, chunk_next, large_k, large_w,
+	    is_final, xform, xform_data };
+
+	write_sharefile_header(&mut f, &header)?;
+
 	handles.push(f);
+
     }
+
 
     let mut at_eof = false;
     loop {
