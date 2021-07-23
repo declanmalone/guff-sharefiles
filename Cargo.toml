@@ -1,6 +1,6 @@
 [package]
 name = "guff-sharefiles"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2018"
 description = "Package IDA-encoded data in a portable file format"
 homepage = "https://github.com/declanmalone/guff-sharefiles"
