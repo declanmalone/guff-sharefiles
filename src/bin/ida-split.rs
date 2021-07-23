@@ -188,8 +188,6 @@ fn main() -> io::Result<()> {
 // sys  0m0.048s  sys   0m0.085s
 //
 
-
-
 fn blockwise_split(infile : &str, k : usize, n : usize,
 		   mut cols : usize, use_ref : bool)
 		   -> io::Result<()> {
@@ -264,13 +262,11 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 	write_sharefile_header(&mut f, &header)?;
 
 	handles.push(f);
-
     }
 
-
+    // let mut wrote_data = 0;
     let mut at_eof = false;
     loop {
-
 	let want_bytes = want_cols * k;
 	let mut have_bytes = 0;
 
@@ -281,7 +277,7 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 	if gcd_padding > 0 {
 	    slice = &mut slice[..want_bytes]
 	}
-	
+
 	while have_bytes < want_bytes {
 	    let result = read_handle.read(&mut slice);
 	    match result {
@@ -309,6 +305,9 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 		simd_warm_multiply(&mut xform, &mut input, &mut output);
 	    }
 	}
+	//	if simd_output.as_slice()[0] != ref_output.as_slice()[0] {
+	//	    eprintln!("ref and simd differ after {}", wrote_data);
+	//	}
 
 	if have_bytes == 0 && at_eof {
 	    eprintln!("File EOF found at even bufsize boundary");
@@ -333,6 +332,8 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
             handles[ext].write(&chunk[..output_cols])?;
 	}
 
+	// wrote_data += output_cols;
+	
 	if at_eof { return Ok(()) }
     }
 

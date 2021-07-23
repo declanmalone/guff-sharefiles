@@ -89,7 +89,7 @@ pub fn encode_length(mut n : usize) -> Vec<u8> {
     // v.push(n as u8);
     v.push(shifts);
     v.reverse();
-    eprintln!("encoded {} as {:x?}", old_n, v);
+    // eprintln!("encoded {} as {:x?}", old_n, v);
     v
 }
 
@@ -128,7 +128,7 @@ pub fn write_sharefile_header(file : &mut File, header : &HeaderV1)
     buffer.extend(header.xform_data.iter());
 
     let length = buffer.len();
-    eprintln!("Buffer is of length {}", length);
+    // eprintln!("Buffer is of length {}", length);
     match file.write(&buffer) {
 	Ok(n) => {
 	    if n != length {
