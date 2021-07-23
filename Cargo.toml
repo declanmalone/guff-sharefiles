@@ -27,7 +27,7 @@ debug = true
 #"num" = "0.4.0"
 #"num-traits" = "0.2.14"
 "guff" = "0.1.7"
-"guff-matrix" = "0.1.9"
+"guff-matrix" = "0.1.10"
 "guff-ida" = "0.1.2"
 "clap" = "2.33.3"
 

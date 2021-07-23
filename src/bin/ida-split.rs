@@ -36,9 +36,10 @@ fn main() -> io::Result<()> {
     //.arg(Arg::with_name("file").value_name("INFILE").required(false))
 	.args_from_usage(
             "-r                   'Use reference matrix mul'
-             -k=[int]               'quorum value'
-             -n=[int]               'number of shares'
-             -s                    'Use SIMD matrix mul (default)'")
+             -f                   'Slurp in full 16m +  8 byte file'
+             -k=[int]             'quorum value'
+             -n=[int]             'number of shares'
+             -s                   'Use SIMD matrix mul (default)'")
 	.arg(Arg::with_name("INFILE")
 	     .help("Sets the input file to use")
 	     .required(false)
@@ -64,6 +65,15 @@ fn main() -> io::Result<()> {
 
     let use_ref = matches.is_present("r");
 
+    if ! matches.is_present("f") {
+	eprintln!("Doing block-wise split");
+	return blockwise_split(infile, k, n, 8192, use_ref)
+    }
+
+    // full slurp only works for a test file of 16Mbytes + 8 bytes
+
+    eprintln!("Doing full slurp");
+
     let mut input = File::open(infile)?;
     let mut buffer = vec![0; (16384*1024) + 8];
 
@@ -84,10 +94,6 @@ fn main() -> io::Result<()> {
     let cauchy_data = cauchy_matrix(&field, &key, 16, 8);
 
 
-    blockwise_split(infile, k, n, 8192, true);
-
-    // return Ok(());
-    
     // guff-matrix needs either/both/all:
     // * architecture-neutral matrix type (NoSimd option)
     // * automatic selection of arch-specific type (with fallback)
@@ -130,9 +136,6 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
-
-
-	
 }
 
 // Do the transform on a block-by-block basis
@@ -164,16 +167,37 @@ fn main() -> io::Result<()> {
 // What I will do is allocate an extra column, but not use it for
 // storing values.
 
+//
+// Results...
+//
+// After fixing a bug in the *reference* multiply routine, I can
+// confirm that the main bottleneck before was actually due to write
+// cache misses. The blockwise split below produces the same output
+// data, but without the bottlneck in writing to the output.
+//
+// Sample run data:
+//
+// Blockwise      Slurp
+// -------------  --------------
+// real 0m0.703s  real  0m1.218s
+// user 0m0.581s  user  0m1.090s
+// sys  0m0.048s  sys   0m0.085s
+//
+
+
+
 fn blockwise_split(infile : &str, k : usize, n : usize,
 		   mut cols : usize, use_ref : bool)
 		   -> io::Result<()> {
 
-    eprintln!("n+k = {}", n+k);
+    // eprintln!("n+k = {}", n+k);
     let key_range = 1..;
     let key = key_range.take(n+k).collect();
 
     let field = new_gf8(0x11b, 0x1b);
     let cauchy_data = cauchy_matrix(&field, &key, n, k);
+
+    // eprintln!("Cauchy matrix data: {:x?}", cauchy_data);
 
     // use larger matrix if we need to satisfy gcd condition but
     // remember that we shouldn't fill or use that column in the
