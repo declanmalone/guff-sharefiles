@@ -11,4 +11,4 @@ Cargo.lock
 *~
 16m*
 perf.data*
-block.out rabin.out
+*.out
