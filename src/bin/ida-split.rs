@@ -107,16 +107,16 @@ fn main() -> io::Result<()> {
     // implemented are for supporting x86 simd operation, so use
     // those (clunky) names...
 
-    let mut xform = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut xform = Matrix
 	::new(16,8,true);
     xform.fill(&cauchy_data);
 
     // must choose cols appropriately (gcd requirement)
-    let mut input = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut input = Matrix
 	::new(8,2048 * 1024 + 1 ,false);
     input.fill(&buffer);
 
-    let mut output = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut output = Matrix
 	::new(16,2048 * 1024 + 1,true);
 
     // Choice of multiply routines
@@ -223,16 +223,16 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
     // allocating a new vector and copying it. We may have to drop it,
     // though, in order for the matrix multiply routine to borrow the
     // struct mutably.
-    let mut xform = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut xform = Matrix
 	::new(n,k,true);
     xform.fill(&cauchy_data);
 
     // must choose cols appropriately (gcd requirement)
-    let mut input = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut input = Matrix
 	::new(k,cols ,false);
     // input.fill(&buffer); // filled in loop
 
-    let mut output = X86Matrix::<x86::X86u8x16Long0x11b>
+    let mut output = Matrix
 	::new(n,cols,true);
 
     // in preparation for writing share headers, break cauchy_data up
