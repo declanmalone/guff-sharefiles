@@ -30,10 +30,10 @@
 // chunk_end.
 
 use std::fs::File;
-// use std::error::Error;
-use std::io;
 use std::io::prelude::*;
-use std::io::{Error, ErrorKind};
+use std::io::ErrorKind;
+
+use guff::*;
 
 pub struct HeaderV1 {
 
@@ -54,7 +54,7 @@ pub struct HeaderV1 {
     pub xform    : bool,
 }
 
-pub fn read_sharefile_header(file : &mut File)
+pub fn read_sharefile_header(_file : &mut File)
 			 -> Result<HeaderV1,String>
 {
 
@@ -76,9 +76,15 @@ pub fn read_sharefile_header(file : &mut File)
 
 // variable encoding length:
 //
-// <bytes - 1> [<high> ...] <low>
+// 0   -> 0
+// 1   -> 1 1
+// 255 -> 1 255
+// 256 -> 2 1 0
+// etc.
+//
+// <bytes> [<high> ... <low>]
 pub fn encode_length(mut n : usize) -> Vec<u8> {
-    let old_n = n;
+    // let old_n = n;
     let mut shifts = 0;
     let mut v = Vec::<u8>::with_capacity(8);
     while n > 0 {
@@ -86,7 +92,6 @@ pub fn encode_length(mut n : usize) -> Vec<u8> {
 	n = n >> 8;
 	shifts += 1;
     }
-    // v.push(n as u8);
     v.push(shifts);
     v.reverse();
     // eprintln!("encoded {} as {:x?}", old_n, v);

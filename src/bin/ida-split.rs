@@ -1,10 +1,10 @@
 
 use guff_sharefiles::*;
 
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
 use std::io;
 use std::io::prelude::*;
-use std::io::{ErrorKind};
+use std::io::ErrorKind::*;
 use std::fs::{File};
 use std::fs::metadata;
 use std::convert::TryInto;
@@ -50,9 +50,9 @@ fn main() -> io::Result<()> {
 	     .index(1))
         .get_matches();
 
-    let mut infile = match matches.value_of("INFILE") {
-	Some(f) => { println!("Using input file: {}", f); f },
-	_ => { println!("Using default file\n"); INFILE }
+    let infile = match matches.value_of("INFILE") {
+	Some(f) => { println!("Using input file: {}", f);      f },
+	_       => { println!("Using default file\n");    INFILE }
     };
 
     let k : usize = if let Some(num) = matches.value_of("k") {
@@ -107,16 +107,16 @@ fn main() -> io::Result<()> {
     // implemented are for supporting x86 simd operation, so use
     // those (clunky) names...
 
-    let mut xform = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    let mut xform = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(16,8,true);
     xform.fill(&cauchy_data);
 
     // must choose cols appropriately (gcd requirement)
-    let mut input = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    let mut input = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(8,2048 * 1024 + 1 ,false);
     input.fill(&buffer);
 
-    let mut output = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    let mut output = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(16,2048 * 1024 + 1,true);
 
     // Choice of multiply routines
@@ -222,17 +222,17 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
     // We can get a mutable slice of the input matrix to avoid
     // allocating a new vector and copying it. We may have to drop it,
     // though, in order for the matrix multiply routine to borrow the
-    // struct mutably, though.
-    let mut xform = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    // struct mutably.
+    let mut xform = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(n,k,true);
     xform.fill(&cauchy_data);
 
     // must choose cols appropriately (gcd requirement)
-    let mut input = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    let mut input = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(k,cols ,false);
     // input.fill(&buffer); // filled in loop
 
-    let mut output = X86SimpleMatrix::<x86::X86u8x16Long0x11b>
+    let mut output = X86Matrix::<x86::X86u8x16Long0x11b>
 	::new(n,cols,true);
 
     // in preparation for writing share headers, break cauchy_data up
@@ -273,7 +273,7 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 	// array has padding, but matrix doesn't expose it
 	let mut slice = input.as_mut_slice();
 
-	// we may have to shrink slice if we added gcd padding
+	// we have to shrink slice if we added gcd padding
 	if gcd_padding > 0 {
 	    slice = &mut slice[..want_bytes]
 	}
@@ -281,7 +281,14 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 	while have_bytes < want_bytes {
 	    let result = read_handle.read(&mut slice);
 	    match result {
-		Err(Interrupted) => { }, // apparently we just retry
+		Err(e) => {
+		    if e.kind() == Interrupted {
+			// apparently we just retry
+			continue
+		    } else {
+			panic!("Some kind of I/O error: {}", e);
+		    }
+		},
 		Ok(0) => { at_eof = true; break },
 		Ok(n) => {
 		    have_bytes += n;
@@ -289,9 +296,6 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 		    // loop again to see if we receive more
 			
 		},
-		Err(x) => {
-		    panic!("Some kind of I/O error: {}", x);
-		}
 	    }
 	}
 	// drop(slice); // not used again anyway
