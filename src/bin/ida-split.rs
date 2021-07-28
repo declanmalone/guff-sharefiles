@@ -11,7 +11,6 @@ use std::convert::TryInto;
 
 use guff::*;
 use guff_matrix::*;
-use guff_matrix::x86::*;
 use guff_ida::*;
 
 // file that 16384k + 8 bytes
