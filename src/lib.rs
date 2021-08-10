@@ -62,7 +62,7 @@ pub fn read_sharefile_header(file : &mut File)
     let k;
     let w;
     let mut chunk_start = 0;
-    let mut chunk_next = 0;
+    let mut chunk_next  = 0;
     let mut xform_data;
 
     let mut buf = [0u8; 256];
