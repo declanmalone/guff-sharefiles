@@ -13,6 +13,7 @@ use std::convert::TryInto;
 
 use guff::*;
 use guff_matrix::*;
+use guff_matrix::simulator::*;
 use guff_ida::*;
 
 fn main() {
@@ -71,7 +72,6 @@ fn main() {
 
     xform_rows.push(header.xform_data);
 
-
     // Scan remaining files
     for (index,file) in files.iter().enumerate() {
         if index == 0 { continue }
@@ -104,6 +104,9 @@ fn main() {
     }
 
     assert_eq!(xform_rows.len(), k);
+    
+    // Need a field to do invert (+if using reference mul)
+    let field = new_gf8(0x11b,0x1b);
 
     // Invert the matrix formed by the xform_rows
     let mut array = Vec::with_capacity(k * k * w);
@@ -118,10 +121,13 @@ fn main() {
 
     let mut xform = Matrix::new(k,k,true);
     xform.fill(array.as_slice());
-    let mut inv   = match xform.invert(&new_gf8(0x11b,0x1b)) {
+    let mut inv   = match xform.invert(&field) {
         Some(m) => { m },
         _ => { panic!("No Matrix inverse (duplicate shares supplied?)") }
     };
+
+    // All error-checking complete, so open output file
+    let mut outfile = File::create(matches.value_of("o").unwrap()).unwrap();
 
     // work around invert not setting up guard properly
     let mut xform = Matrix::new(k,k,true);
@@ -176,7 +182,7 @@ fn main() {
     // slices of the input matrix, but we need temporary storage when
     // there's an interleave step.
     let mut temp_buffers = vec![0u8; k * bufsize * w];
-    
+
     // expect_read_bytes is also the total number of columns that we
     // must process to produce all the output, so we can use it as our
     // loop counter/condition.
@@ -247,14 +253,30 @@ fn main() {
             }
         }
 
-        drop(read_slices);
-        
-        
-        // TODO: add interleaver to main guff-matrix lib
+        // drop(read_slices);      // might have a lock on matrix
 
-        // The simulator module has a working version, so can use that
-        // for now.
+        // do multiply
+        if use_ref {
+	    reference_matrix_multiply(&mut xform, &mut input,
+				      &mut output, &field);
+        } else {
+            // TODO: add interleaver to main guff-matrix lib
+            // The simulator module has a working version, so can use that
+            // for now.
 
+            let source_slices : Vec<_> = temp_buffers
+                .as_slice()
+                .chunks(bufsize)
+                .collect();
+            interleave_streams(input.as_mut_slice(), &source_slices);
+	    unsafe {
+	        simd_warm_multiply(&mut xform, &mut input, &mut output);
+	    }
+        }
+
+        // Write out data
+        outfile.write(&output.as_slice()[..expect_columns * k]);
+        
         columns_processed += expect_columns;
     }
     

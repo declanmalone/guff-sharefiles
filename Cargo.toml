@@ -26,7 +26,7 @@ debug = true
 "clap" = "2.33.3"
 # "guff"        = { version = "~0.1" }
 "guff"        = { path="../guff",        version = "~0.1" }
-"guff-matrix" = { path="../guff-matrix", version = "~0.1", features = ["arm_vmull"] }
+"guff-matrix" = { path="../guff-matrix", version = "~0.1", features = ["arm_vmull", "simulator"] }
 "guff-ida"    = { path="../guff-ida",    version = "~0.1" }
 "byteorder"   = "^1.4.3"
 
