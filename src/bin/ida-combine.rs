@@ -145,14 +145,14 @@ fn main() {
     // file. We will need to read chunk_next / k bytes (rounded up)
     // from each input file.
 
-    eprintln!("chunk_next is {}", chunk_next);
+    // eprintln!("chunk_next is {}", chunk_next);
     let mut expect_read_bytes = chunk_next / k;
     if expect_read_bytes * k != chunk_next { // alternative to %
         expect_read_bytes += 1
     }
 
-    eprintln!("Expect to read {} bytes from each stream (hex: {:x})",
-              expect_read_bytes, expect_read_bytes);
+    // eprintln!("Expect to read {} bytes from each stream (hex: {:x})",
+    //           expect_read_bytes, expect_read_bytes);
 
 
     // Set up other matrices.
@@ -187,19 +187,19 @@ fn main() {
     // must process to produce all the output, so we can use it as our
     // loop counter/condition.
     let mut columns_processed = 0;
-    eprintln!("Expect to read {} bytes per input file",
-              expect_read_bytes);
+    // eprintln!("Expect to read {} bytes per input file",
+    //           expect_read_bytes);
     while columns_processed < expect_read_bytes {
 
         // how many columns do we expect to process this time?
         let mut expect_columns = bufsize;
         if columns_processed + expect_columns > expect_read_bytes {
             // final block can be less than bufsize
-            eprintln!("Final (partial) block");
+            // eprintln!("Final (partial) block");
             expect_columns = expect_read_bytes - columns_processed
         }
-        eprintln!("processed: {}, expect {} this iteration",
-                  columns_processed, expect_columns);
+        // eprintln!("processed: {}, expect {} this iteration",
+        //           columns_processed, expect_columns);
 
         // read() needs mut slices, so set up a list of them
         let mut read_slices;// : Vec<&mut [u8]>;
@@ -279,6 +279,5 @@ fn main() {
         
         columns_processed += expect_columns;
     }
-    
 }
 
