@@ -183,7 +183,7 @@ pub fn read_sharefile_header(file : &mut File)
             return Err("Problem reading chunk next".to_string());
         }
     }
-    match file.read_exact(&mut buf[0..start_len]) {
+    match file.read_exact(&mut buf[0..next_len]) {
         Ok(_) => {
             let mut index = 0;
             while index < next_len {

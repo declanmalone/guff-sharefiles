@@ -122,7 +122,141 @@ fn main() {
         Some(m) => { m },
         _ => { panic!("No Matrix inverse (duplicate shares supplied?)") }
     };
+
+    // work around invert not setting up guard properly
+    let mut xform = Matrix::new(k,k,true);
+    xform.fill(inv.as_slice());
+
+    // Decide on an appropriate buffer size
+    let mut bufsize = 16384;
+    if bufsize % k == 0 {
+        bufsize += 1
+    }
+
+    // block-wise combine
+    //
+    // chunk_next tells us how many bytes should be in the output
+    // file. We will need to read chunk_next / k bytes (rounded up)
+    // from each input file.
+
+    eprintln!("chunk_next is {}", chunk_next);
+    let mut expect_read_bytes = chunk_next / k;
+    if expect_read_bytes * k != chunk_next { // alternative to %
+        expect_read_bytes += 1
+    }
+
+    eprintln!("Expect to read {} bytes from each stream (hex: {:x})",
+              expect_read_bytes, expect_read_bytes);
+
+
+    // Set up other matrices.
+    
+    // The SIMD matrix multiply requires that the input matrix is in
+    // colwise format, while the reference multiply is agnostic about
+    // format. The output matrix can be in either format, but for
+    // sequential output the most logical choice is colwise.
+    //
+    // This means that if we're using the reference multiply, we can
+    // choose the layout that makes it easiest to populate the input
+    // matrix, which is rowwise.
+    //
+    // If we're using the SIMD, we have no choice but to use colwise,
+    // so we will need to interleave the input streams.
+
+    let mut output = Matrix::new(k, bufsize, false);
+
+    let mut input;
+    if use_ref {
+        input = Matrix::new(k, bufsize, true);
+    } else {
+        input = Matrix::new(k, bufsize, false);
+    }
+
+    // Set up read buffers. For reference multiply, these can be
+    // slices of the input matrix, but we need temporary storage when
+    // there's an interleave step.
+    let mut temp_buffers = vec![0u8; k * bufsize * w];
+    
+    // expect_read_bytes is also the total number of columns that we
+    // must process to produce all the output, so we can use it as our
+    // loop counter/condition.
+    let mut columns_processed = 0;
+    eprintln!("Expect to read {} bytes per input file",
+              expect_read_bytes);
+    while columns_processed < expect_read_bytes {
+
+        // how many columns do we expect to process this time?
+        let mut expect_columns = bufsize;
+        if columns_processed + expect_columns > expect_read_bytes {
+            // final block can be less than bufsize
+            eprintln!("Final (partial) block");
+            expect_columns = expect_read_bytes - columns_processed
+        }
+        eprintln!("processed: {}, expect {} this iteration",
+                  columns_processed, expect_columns);
+
+        // read() needs mut slices, so set up a list of them
+        let mut read_slices;// : Vec<&mut [u8]>;
+        if use_ref {
+            read_slices = input
+                .as_mut_slice()
+                .chunks_mut(bufsize)
+            // .collect()
+        } else {
+            read_slices = temp_buffers
+                .as_mut_slice()
+                .chunks_mut(bufsize)
+            // .collect()
+        }
+
+        // Assuming that read() can fail to return all requested bytes
+        // sometimes (eg, due to interrupt), we need to loop over each
+        // stream until the required number are returned. Persist with
+        // one file until we get what we need or hit premature eof or
+        // other unrecoverable error
+
+        for (i, mut fh) in handles.iter().enumerate() {
+            let mut got_columns = 0;
+            let mut slice = read_slices.next().unwrap();
+            let mut at_eof = false; // per-stream
+
+            while got_columns < expect_columns {
+
+                let result = fh.read(&mut slice);
+	        match result {
+	            Err(e) => {
+		        if e.kind() == Interrupted {
+		            // apparently we just retry
+		            continue
+		        } else {
+		            panic!("I/O error on {}: {}", files[i], e);
+		        }
+	            },
+	            Ok(0) => { at_eof = true; break },
+	            Ok(n) => {
+		        got_columns += n;
+		        slice = &mut slice[n..];
+		        // loop again to see if we receive more
+		        
+	            },
+	        }
+            }
+            if at_eof && got_columns < expect_columns {
+                panic!("Premature EOF on {}; got {}, expected {}",
+                       files[i], got_columns, expect_columns)
+            }
+        }
+
+        drop(read_slices);
         
+        
+        // TODO: add interleaver to main guff-matrix lib
+
+        // The simulator module has a working version, so can use that
+        // for now.
+
+        columns_processed += expect_columns;
+    }
     
 }
 

@@ -297,6 +297,7 @@ fn blockwise_split(infile : &str, k : usize, n : usize,
 		},
 	    }
 	}
+        
 	// drop(slice); // not used again anyway
 
 	// do the multiply on the block
