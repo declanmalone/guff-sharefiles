@@ -276,6 +276,11 @@ fn main() {
 
         // Write out data
         outfile.write(&output.as_slice()[..expect_columns * k]);
+
+        // actually ... above may put out too many bytes if original
+        // input was not a multiple of k; can truncate the file so
+        // that it's exactly chunk_next bytes (outside loop), or can
+        // refine expect_columns * k value above.
         
         columns_processed += expect_columns;
     }
