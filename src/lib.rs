@@ -54,20 +54,163 @@ pub struct HeaderV1 {
     pub xform    : bool,
 }
 
-pub fn read_sharefile_header(_file : &mut File)
+use byteorder::{ByteOrder, LittleEndian,BigEndian};
+
+pub fn read_sharefile_header(file : &mut File)
 			 -> Result<HeaderV1,String>
 {
+    let k;
+    let w;
+    let mut chunk_start = 0;
+    let mut chunk_next = 0;
+    let mut xform_data;
 
-    let k = 4;
-    let w = 1;
-    let chunk_start = 0;
-    let chunk_next = 0;
-    let large_k = false;
-    let large_w = false;
-    let is_final = true;
-    let xform = true;
-    let xform_data = vec![0u8; 14];
+    let mut buf = [0u8; 256];
+
+    // This is all very verbose, but it doesn't matter
+
+    // magic "SF" is 0x5346 (big endian)
+    match file.read_exact(&mut buf[0..2]) {
+        Ok(_) => {
+            let got = BigEndian::read_u16(&buf);
+            if got != 0x5346 {
+                eprintln!("Expected 0x5346, got {:4x}", got);
+                return Err("No Magic".to_string())
+            }
+        },
+        _ => {
+            return Err("Problem reading file magic".to_string());
+        }
+    }
+
+    // version + options
+    let options;
+    match file.read_exact(&mut buf[0..2]) {
+        Ok(_) => {
+            if buf[0] != 0x01u8 {
+                return Err("Expected version 1".to_string())
+            }
+            options = buf[1];
+            if options & 0xf0 != 0 {
+                return Err("Unexpected high (4--7) bits in options"
+                           .to_string());
+            }
+        },
+        _ => {
+            return Err("Problem reading file version/options".to_string());
+        }
+    }
+
+    // extract options
+    let large_k  : bool = if options & 0x01 != 0 { true } else { false };
+    let large_w  : bool = if options & 0x02 != 0 { true } else { false };
+    let is_final : bool = if options & 0x04 != 0 { true } else { false };
+    let xform    : bool = if options & 0x08 != 0 { true } else { false };
+
+    // k
+    if large_k {
+        match file.read_exact(&mut buf[0..2]) {
+            Ok(_) => {
+                k = BigEndian::read_u16(&buf) as usize;
+            },
+            _ => {
+                return Err("Problem reading k".to_string());
+            }
+        }
+    } else {
+        match file.read_exact(&mut buf[0..1]) {
+            Ok(_) => {
+                k = buf[0] as usize;
+            },
+            _ => {
+                return Err("Problem reading k".to_string());
+            }
+        }
+    }    
     
+    // w
+    if large_w {
+        match file.read_exact(&mut buf[0..2]) {
+            Ok(_) => {
+                w = BigEndian::read_u16(&buf) as usize;
+            },
+            _ => {
+                return Err("Problem reading w".to_string());
+            }
+        }
+    } else {
+        match file.read_exact(&mut buf[0..1]) {
+            Ok(_) => {
+                w = buf[0] as usize;
+            },
+            _ => {
+                return Err("Problem reading w".to_string());
+            }
+        }
+    }
+
+    // chunk_start and chunk_next use variable length encoding
+
+    let start_len;
+    match file.read_exact(&mut buf[0..1]) {
+        Ok(_) => {
+            start_len = buf[0] as usize;
+        },
+        _ => {
+            return Err("Problem reading chunk start".to_string());
+        }
+    }
+    match file.read_exact(&mut buf[0..start_len]) {
+        Ok(_) => {
+            let mut index = 0;
+            while index < start_len {
+                chunk_start <<= 8;
+                chunk_start += buf[index as usize] as usize;
+                index += 1;
+            }
+        },
+        _ => {
+            return Err("Problem reading chunk start".to_string());
+        }
+    }
+    
+    let next_len;
+    match file.read_exact(&mut buf[0..1]) {
+        Ok(_) => {
+            next_len = buf[0] as usize;
+        },
+        _ => {
+            return Err("Problem reading chunk next".to_string());
+        }
+    }
+    match file.read_exact(&mut buf[0..start_len]) {
+        Ok(_) => {
+            let mut index = 0;
+            while index < next_len {
+                chunk_next <<= 8;
+                chunk_next += buf[index as usize] as usize;
+                index += 1;
+            }
+        },
+        _ => {
+            return Err("Problem reading chunk next".to_string());
+        }
+    }
+
+    // TODO: use an enum or something (GenericArray?) to return
+    // transform as a vector of u16 if w is 2, u32 if 4, etc.
+    xform_data = Vec::with_capacity(w * k);
+    if xform {
+        match file.read_exact(&mut buf[0..w * k]) {
+            Ok(_) => {
+                xform_data.extend((&buf[..w * k]).iter());
+            },
+            _ => {
+                return Err("Problem reading transform row".to_string());
+            }
+        }
+    }
+
     Ok(HeaderV1 {
 	k, w, chunk_start, chunk_next, large_k, large_w,
 	is_final, xform, xform_data

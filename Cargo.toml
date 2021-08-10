@@ -28,6 +28,8 @@ debug = true
 "guff"        = { path="../guff",        version = "~0.1" }
 "guff-matrix" = { path="../guff-matrix", version = "~0.1", features = ["arm_vmull"] }
 "guff-ida"    = { path="../guff-ida",    version = "~0.1" }
+"byteorder"   = "^1.4.3"
+
 
 # I want documentation generated for features
 [package.metadata.docs.rs]

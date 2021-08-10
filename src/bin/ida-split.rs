@@ -39,13 +39,14 @@ fn main() -> io::Result<()> {
     //.arg(Arg::with_name("file").value_name("INFILE").required(false))
 	.args_from_usage(
             "-r                   'Use reference matrix mul'
+             -s                   'Use SIMD matrix mul (default)'
              -f                   'Slurp in full 16m +  8 byte file'
-             -k=[int]             'quorum value'
-             -n=[int]             'number of shares'
-             -s                   'Use SIMD matrix mul (default)'")
+             -k=<int>             'quorum value'
+             -n=<int>             'number of shares'
+             ")
 	.arg(Arg::with_name("INFILE")
 	     .help("Sets the input file to use")
-	     .required(false)
+	     .required(true)
 	     .index(1))
         .get_matches();
 
@@ -106,8 +107,7 @@ fn main() -> io::Result<()> {
     // implemented are for supporting x86 simd operation, so use
     // those (clunky) names...
 
-    let mut xform = Matrix
-	::new(16,8,true);
+    let mut xform = Matrix::new(16,8,true);
     xform.fill(&cauchy_data);
 
     // must choose cols appropriately (gcd requirement)
